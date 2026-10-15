@@ -5,9 +5,9 @@ planned L/X/Ka-band inputs and constrained endmember analysis.
 
 ## Current sample
 
-The repository contains one SMAP L1C brightness-temperature HDF5 granule:
+The original single-granule example is now stored with the other SMAP inputs:
 
-`SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5`
+`data/raw/smap_l1c/SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5`
 
 It includes north and south polar projection groups, per-cell latitude,
 longitude, EASE-grid row/column, fore/aft H/V brightness temperatures, surface
@@ -31,7 +31,7 @@ With the project Python environment installed from `requirements.lock`, run:
 
 ```bash
 python scripts/profile_smap_l1c.py \
-  SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
+  data/raw/smap_l1c/SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
   --hemisphere north
 ```
 
@@ -50,7 +50,7 @@ latitude, ocean, and analysis-candidate masks. The default Arctic cutoff is
 
 ```bash
 python scripts/prepare_smap_l1c.py \
-  SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
+  data/raw/smap_l1c/SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
   --output data/processed/smap_20160131_prepared.csv
 ```
 
@@ -77,7 +77,7 @@ the nearest AMSR2 25 km grid center:
 
 ```bash
 python scripts/prepare_smap_l1c.py \
-  SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
+  data/raw/smap_l1c/SMAP_L1C_TB_05344_D_20160131T232727_R19240_001.h5 \
   --output data/processed/smap_20160131_prepared.csv
 
 python scripts/collocate_smap_amsr2.py \
@@ -123,8 +123,47 @@ range is not enough to train a reliable concentration retrieval.
 
 ## Next processing steps
 
-1. Acquire multiple dates and broader spatial/seasonal coverage, with an
-   independent reference such as ice charts or a separately generated
-   concentration product.
-2. Implement and evaluate a single-sensor baseline before the constrained
-   multi-band endmember model. Keep dates or regions held out for validation.
+The repository now includes descending SMAP L1C granules, AMSR2 AU_SI25, and
+NOAA/NSIDC G02202 Version 6 for 2016-01-31 and the 15th of each month from
+February through December. January contains one SMAP half-orbit; the other
+dates contain 14–15 half-orbits each. Build one comparison table per date:
+
+```bash
+python scripts/build_daily_collocations.py
+```
+
+The script writes `data/processed/daily_collocations/*.csv` and `summary.md`.
+It applies the same SMAP aft-H/V quality screen as the single-granule example,
+keeps only observations acquired on the selected UTC date, and selects the
+nearest SMAP observation for each common AMSR2/G02202 25 km grid cell within
+18 km. The AMSR2 and G02202 grid centers agree to within 2 m in this product
+pair. SMAP L1C is a coarser observation: joining it to 25 km target cells does
+not create a 25 km L-band measurement. The output retains observation time,
+source file, quality flags, and center distance.
+
+G02202 concentration is stored as 0–100 integers with a scale factor of 0.01
+to fraction. The CSV reports percent. The `cdr_usable` flag excludes missing,
+invalid-ice-mask, land-spillover, and interpolated pixels; it retains the
+product's weather-filtered values with their QA flags. `cdr_strict` also
+excludes weather-filtered values. The latter leaves no open-water observations
+on these dates, so it cannot by itself support a water endmember. G02202 is a
+separate passive-microwave retrieval, suitable for an exploratory comparison
+or weak training target, not independent ground truth.
+
+Compare the first two channel baselines on complete SMAP days:
+
+```bash
+python scripts/evaluate_channel_baselines.py
+```
+
+The date-held-out report is written to
+`data/processed/daily_collocations/channel_baselines.md`. On the 11 complete
+days, pooled MAE against G02202 is 4.48 percentage points for X/Ka and 4.42
+for native L/X/Ka. The improvement is small and reverses on some summer dates;
+these are cross-product agreement scores, not independent accuracy estimates.
+See [methodology review](docs/methodology_review.md) for the research decisions.
+
+For the final research claim, obtain a validated
+downscaled L-band product and independent ice charts, SAR, optical, or field
+reference. One-year and multiyear-ice abundances additionally require ice-type
+information; total concentration alone does not identify those endmembers.
